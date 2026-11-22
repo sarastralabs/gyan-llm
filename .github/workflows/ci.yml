@@ -33,3 +33,26 @@ jobs:
           context: gateway
           platforms: linux/amd64,linux/arm64
           push: false
+
+  deploy:
+    # Pushes to main go live on the server once the tests and the image build pass.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [gateway, image]
+    concurrency: deploy-production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Deploy to the server
+        env:
+          GYAN_VM: ${{ secrets.VM_TARGET }}
+          GYAN_HOST: ${{ vars.GYAN_HOST }}
+        run: bash scripts/deploy.sh "$GYAN_VM" "$HOME/.ssh/deploy_key" "$GYAN_HOST"
