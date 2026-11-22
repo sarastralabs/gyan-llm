@@ -1,0 +1,26 @@
+# SearXNG: a private metasearch engine used by the gateway's research feature.
+# It is reachable only inside the compose network (no published port), so the limiter,
+# which protects public instances, is off.
+use_default_settings: true
+
+general:
+  instance_name: "gyan-search"
+  debug: false
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  # The gateway asks for JSON; keep html for debugging through an SSH tunnel.
+  formats:
+    - html
+    - json
+
+server:
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  # secret_key comes from the SEARXNG_SECRET environment variable.
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 10.0

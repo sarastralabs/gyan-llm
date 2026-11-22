@@ -1,0 +1,11 @@
+# Local preview on a PC (Docker Desktop) using a model that runs elsewhere, e.g. on the VM
+# reached through an SSH tunnel:
+#
+#   ssh -N -L 11435:127.0.0.1:11434 ubuntu@<vm>            (leave it running)
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml --profile ui up -d --build
+#
+# Set OLLAMA_URL=http://host.docker.internal:11435 in .env. The local Ollama container is not
+# started (profile "local-ollama"), so nothing is downloaded to the PC.
+services:
+  ollama:
+    profiles: ["local-ollama"]

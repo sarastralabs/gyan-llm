@@ -1,0 +1,161 @@
+# Gyan stack.
+#
+# On the VM (or any server), scripts/deploy.sh does everything below for you. By hand:
+#   python3 scripts/init_env.py --host YOUR.HOSTNAME     # creates .env with fresh secrets
+#   docker compose up -d --build                          # gateway, Redis, Ollama, SearXNG
+#   docker compose exec ollama ollama pull qwen2.5:3b
+#   docker compose exec gateway gyan-gateway create-key --name gyan-ui --rpm 300 --daily 5000
+#   (put the key in .env as GYAN_API_KEY, then)
+#   docker compose --profile ui up -d                     # chat UI (LibreChat + MongoDB)
+#
+# Only the gateway (8000) and the UI (3080) publish a port, both on 127.0.0.1; nginx is the public
+# door (deploy/nginx). Redis, Ollama, SearXNG and MongoDB are never exposed.
+#
+# Memory limits protect the 12 GB VM: the model needs about 3 to 4 GB, everything else is small.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  gateway:
+    build: ./gateway
+    image: gyan-gateway:dev
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 512m
+    depends_on:
+      redis: { condition: service_started }
+      searxng: { condition: service_started }
+      # Optional: with an external Ollama, disable this service and set OLLAMA_URL in .env.
+      ollama: { condition: service_started, required: false }
+    env_file: .env
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      REDIS_URL: redis://redis:6379/0
+      SEARXNG_URL: http://searxng:8080
+      DATABASE_PATH: /data/gateway.db
+    ports:
+      # Set GATEWAY_PORT in .env if 8000 is taken on the host (inside the network it is always 8000).
+      - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
+    volumes:
+      - gateway-data:/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 192m
+    # Memory-only: it holds counters, the queue and caches; nothing that must survive a restart.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 6g
+    environment:
+      OLLAMA_KEEP_ALIVE: 10m
+      OLLAMA_CONTEXT_LENGTH: "4096"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      - ollama-models:/root/.ollama
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 512m
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}
+    volumes:
+      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml
+      - searxng-cache:/var/cache/searxng
+
+  # ----------------------------------------------------------------------- chat UI (profile "ui")
+
+  mongodb:
+    profiles: ["ui"]
+    image: mongo:8.0.20
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 768m
+    # Without the cache cap MongoDB may take about half of the machine's RAM.
+    command: ["mongod", "--noauth", "--bind_ip", "0.0.0.0", "--wiredTigerCacheSizeGB", "0.5"]
+    volumes:
+      - mongo-data:/data/db
+
+  librechat:
+    profiles: ["ui"]
+    # Pinned release, published for amd64 and arm64. Upgrading = change the tag.
+    image: registry.librechat.ai/librechat-ai/librechat:v0.8.9
+    restart: unless-stopped
+    logging: *logging
+    mem_limit: 1536m
+    depends_on: [mongodb, gateway]
+    # Not `env_file: .env`: the UI must not receive the gateway's admin token.
+    environment:
+      HOST: 0.0.0.0
+      PORT: "3080"
+      MONGO_URI: mongodb://mongodb:27017/Gyan
+      DOMAIN_CLIENT: ${DOMAIN_CLIENT:-http://localhost:3080}
+      DOMAIN_SERVER: ${DOMAIN_CLIENT:-http://localhost:3080}
+      TRUST_PROXY: "1"
+      NO_INDEX: "true"
+      APP_TITLE: Gyan
+      CUSTOM_FOOTER: Gyan by Sarastra Labs
+      HELP_AND_FAQ_URL: https://sarastralabs.com
+      ENDPOINTS: custom
+      CONFIG_PATH: /app/librechat.yaml
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+      ALLOW_EMAIL_LOGIN: "true"
+      ALLOW_SOCIAL_LOGIN: "false"
+      SEARCH: "false"
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
+      CREDS_KEY: ${CREDS_KEY:-}
+      CREDS_IV: ${CREDS_IV:-}
+      GYAN_API_KEY: ${GYAN_API_KEY:-}
+      GYAN_BASE_URL: http://gateway:8000/v1
+      # We run exactly one UI process; this tells LibreChat so (silences a scheduler warning).
+      SCHEDULES_SINGLE_PROCESS: "true"
+    command: ["sh", "/gyan-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    ports:
+      - "127.0.0.1:3080:3080"
+    volumes:
+      - ./ui/librechat.yaml:/app/librechat.yaml:ro
+      - ./ui/entrypoint.sh:/gyan-entrypoint.sh:ro
+      # Gyan icons replace LibreChat's (same file names) and add the model avatar.
+      - ./ui/assets/logo.svg:/app/client/dist/assets/logo.svg:ro
+      - ./ui/assets/gyan-icon.png:/app/client/dist/assets/gyan-icon.png:ro
+      - ./ui/assets/favicon-16x16.png:/app/client/dist/assets/favicon-16x16.png:ro
+      - ./ui/assets/favicon-32x32.png:/app/client/dist/assets/favicon-32x32.png:ro
+      - ./ui/assets/apple-touch-icon-180x180.png:/app/client/dist/assets/apple-touch-icon-180x180.png:ro
+      - ./ui/assets/icon-192x192.png:/app/client/dist/assets/icon-192x192.png:ro
+      - ./ui/assets/maskable-icon.png:/app/client/dist/assets/maskable-icon.png:ro
+      - librechat-images:/app/client/public/images
+      - librechat-uploads:/app/uploads
+      - librechat-logs:/app/logs
+
+volumes:
+  gateway-data:
+  ollama-models:
+  searxng-cache:
+  mongo-data:
+  librechat-images:
+  librechat-uploads:
+  librechat-logs:

@@ -1,0 +1,165 @@
+# Gyan chat UI: LibreChat configured as a Gyan-branded front end for the gateway.
+# Reference for every option: https://www.librechat.ai/docs/configuration/librechat_yaml
+#
+# Branding lives here (theme, welcome text) and in ui/assets (icons) and ui/entrypoint.sh
+# (page title). No LibreChat source code is modified, so upgrading is just a new image tag.
+version: 1.3.19
+cache: true
+
+interface:
+  customWelcome: "Ask Gyan anything. Switch to Gyan Research for answers with sources."
+
+  # Gyan is a plain chat product: hide the features that need other back ends.
+  mascot: false
+  parameters: false
+  presets: false
+  bookmarks: false
+  multiConvo: false
+  memories: false
+  runCode: false
+  webSearch: false      # Gyan Research (below) does the web searching, through the gateway
+  fileSearch: false
+  fileCitations: false
+  temporaryChat: true
+  # LibreChat assumes a 30K-token window for unknown models; ours is 4K, so the meter would mislead.
+  contextUsage: false
+  contextCost: false
+  mcpServers:
+    use: false
+    create: false
+    share: false
+    public: false
+  prompts:
+    use: false
+    create: false
+    share: false
+    public: false
+  agents:
+    use: false
+    create: false
+    share: false
+    public: false
+  marketplace:
+    use: false
+
+  # Sarastra Labs look, taken from sarastralabs.com:
+  #   paper #FBF7F2, ink #16130F, accent orange #FF5C00, Inter, pill buttons.
+  # Colors are "R G B" triplets. The dark mode keeps the same warm hue.
+  theme:
+    version: 1
+    name: gyan
+    modes:
+      light:
+        colors:
+          rgb-surface-primary: "251 247 242"
+          rgb-surface-primary-alt: "244 237 228"
+          rgb-surface-secondary: "244 237 228"
+          rgb-surface-secondary-alt: "237 228 216"
+          rgb-surface-tertiary: "237 228 216"
+          rgb-surface-tertiary-alt: "232 222 209"
+          rgb-surface-hover: "237 228 216"
+          rgb-surface-hover-alt: "232 222 209"
+          rgb-surface-active: "232 222 209"
+          rgb-surface-active-alt: "224 212 197"
+          rgb-surface-chat: "251 247 242"
+          rgb-surface-sidebar: "244 237 228"
+          rgb-surface-submit: "255 92 0"
+          rgb-surface-submit-hover: "230 83 0"
+          rgb-accent-primary: "230 83 0"
+          rgb-accent-primary-hover: "194 65 12"
+          rgb-ring-primary: "255 92 0"
+          rgb-text-primary: "22 19 15"
+          rgb-text-secondary: "92 82 71"
+          rgb-text-secondary-alt: "124 112 99"
+          rgb-text-tertiary: "124 112 99"
+          rgb-border-light: "232 222 209"
+          rgb-border-medium: "214 201 184"
+          rgb-border-heavy: "169 156 140"
+          rgb-border-xheavy: "124 112 99"
+          rgb-link-inline: "194 65 12"
+          rgb-link-prose: "194 65 12"
+        appearance:
+          fontFamily: "Inter, system-ui, sans-serif"
+          controlRadius: "0.75rem"
+          roundControlRadius: "9999px"
+          authControlRadius: "9999px"
+      dark:
+        colors:
+          rgb-surface-primary: "26 22 17"
+          rgb-surface-primary-alt: "33 28 22"
+          rgb-surface-secondary: "42 36 29"
+          rgb-surface-secondary-alt: "51 44 36"
+          rgb-surface-tertiary: "63 55 47"
+          rgb-surface-tertiary-alt: "75 66 56"
+          rgb-surface-hover: "51 44 36"
+          rgb-surface-hover-alt: "63 55 47"
+          rgb-surface-active: "63 55 47"
+          rgb-surface-active-alt: "75 66 56"
+          rgb-surface-chat: "26 22 17"
+          rgb-surface-sidebar: "33 28 22"
+          rgb-surface-submit: "255 92 0"
+          rgb-surface-submit-hover: "255 122 51"
+          rgb-accent-primary: "255 122 51"
+          rgb-accent-primary-hover: "255 148 94"
+          rgb-ring-primary: "255 122 51"
+          rgb-text-primary: "251 247 242"
+          rgb-text-secondary: "214 201 184"
+          rgb-text-secondary-alt: "169 156 140"
+          rgb-text-tertiary: "169 156 140"
+          rgb-border-light: "51 44 36"
+          rgb-border-medium: "75 66 56"
+          rgb-border-heavy: "92 82 71"
+          rgb-border-xheavy: "124 112 99"
+          rgb-link-inline: "255 148 94"
+          rgb-link-prose: "255 148 94"
+        appearance:
+          fontFamily: "Inter, system-ui, sans-serif"
+          controlRadius: "0.75rem"
+          roundControlRadius: "9999px"
+          authControlRadius: "9999px"
+
+# Gyan's models are text-only; do not offer file uploads.
+fileConfig:
+  endpoints:
+    Gyan:
+      disabled: true
+
+endpoints:
+  custom:
+    - name: "Gyan"
+      # Both come from .env (the gateway API key made for the UI, and the gateway address).
+      apiKey: "${GYAN_API_KEY}"
+      baseURL: "${GYAN_BASE_URL}"
+      models:
+        default: ["qwen2.5:3b", "gyan-research"]
+        fetch: false
+      # Naming a chat costs an extra model call. On a 2-core server that delays real answers.
+      titleConvo: false
+      modelDisplayLabel: "Gyan"
+      iconURL: "/assets/gyan-icon.png"
+      dropParams: ["user"]
+
+# The two things people can pick. "enforce" hides the raw model list.
+modelSpecs:
+  enforce: true
+  prioritize: true
+  list:
+    - name: "gyan-chat"
+      label: "Gyan Chat"
+      description: "Fast answers from the Gyan model."
+      iconURL: "/assets/gyan-icon.png"
+      default: true
+      preset:
+        endpoint: "Gyan"
+        model: "qwen2.5:3b"
+        modelLabel: "Gyan"
+        temperature: 0.7
+    - name: "gyan-research"
+      label: "Gyan Research"
+      description: "Searches the web, reads the pages and answers with numbered sources. Takes about 30 to 60 seconds."
+      iconURL: "/assets/gyan-icon.png"
+      preset:
+        endpoint: "Gyan"
+        model: "gyan-research"
+        modelLabel: "Gyan Research"
+        temperature: 0.2
