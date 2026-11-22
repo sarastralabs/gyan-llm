@@ -25,7 +25,7 @@ server {
     server_name __HOST__;
     server_tokens off;
 
-    client_max_body_size 1m;
+    client_max_body_size 12m;  # photos and scans
     limit_conn gyan_conn 40;
 
     add_header X-Content-Type-Options "nosniff" always;

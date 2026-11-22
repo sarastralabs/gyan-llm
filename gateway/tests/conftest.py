@@ -1,6 +1,7 @@
 """Test fixtures: fake Redis, a fake Ollama (httpx.MockTransport) and an app wired to both."""
 from __future__ import annotations
 
+import base64
 import json
 
 import fakeredis.aioredis
@@ -16,6 +17,7 @@ from gyan_gateway.research.search import ResearchError, SearchResult
 ADMIN_TOKEN = "a" * 32
 ADMIN = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
 MODELS = ("qwen2.5:3b", "tiny:1b")
+HELPER_MODELS = ("glm-ocr:latest", "qwen2.5vl:3b")  # image readers: installed, but hidden
 
 ARTICLE = """<html><head><title>Alpha Docs - Install</title></head><body>
 <nav><a href="/">Home</a><a href="/pricing">Pricing</a></nav>
@@ -61,12 +63,24 @@ class FakeFetcher:
         return self.pages.get(url)
 
 
-def make_ollama(captured: list[dict]):
+def make_ollama(captured: list[dict], vision_calls: list[dict] | None = None):
     """A stand-in for Ollama's /api/tags and OpenAI-compatible /v1/chat/completions."""
+
+    vision_calls = [] if vision_calls is None else vision_calls
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/tags":
-            return httpx.Response(200, json={"models": [{"name": m} for m in MODELS]})
+            names = [*MODELS, *HELPER_MODELS]
+            return httpx.Response(200, json={"models": [{"name": m} for m in names]})
+        if request.url.path == "/api/chat":  # native API, used to read images
+            body = json.loads(request.content)
+            vision_calls.append(body)
+            pixels = base64.b64decode(body["messages"][0]["images"][0])
+            if body["model"].startswith("glm-ocr"):
+                text = "" if b"photo" in pixels else "INVOICE 4821 Total: Rs 6,050 (GST included)"
+            else:
+                text = "A brown dog running on a beach at sunset."
+            return httpx.Response(200, json={"message": {"role": "assistant", "content": text}})
         if request.url.path == "/v1/chat/completions":
             body = json.loads(request.content)
             captured.append(body)
@@ -107,6 +121,11 @@ def captured() -> list[dict]:
 
 
 @pytest.fixture
+def vision_calls() -> list[dict]:
+    return []
+
+
+@pytest.fixture
 def settings(tmp_path) -> Settings:
     return Settings(
         admin_token=ADMIN_TOKEN,
@@ -118,7 +137,7 @@ def settings(tmp_path) -> Settings:
 
 
 @pytest.fixture
-def make_client(captured):
+def make_client(captured, vision_calls):
     def build(
         settings: Settings,
         *,
@@ -127,7 +146,7 @@ def make_client(captured):
         search_error: bool = False,
     ) -> TestClient:
         redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
-        http = httpx.AsyncClient(transport=httpx.MockTransport(make_ollama(captured)))
+        http = httpx.AsyncClient(transport=httpx.MockTransport(make_ollama(captured, vision_calls)))
         researcher = Researcher(
             FakeSearch(RESULTS if results is None else results, search_error),  # type: ignore[arg-type]
             FakeFetcher(PAGES if pages is None else pages),  # type: ignore[arg-type]

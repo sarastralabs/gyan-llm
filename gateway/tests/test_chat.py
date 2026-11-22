@@ -68,12 +68,12 @@ def test_default_model_used_when_missing(client, captured):
     assert captured[-1]["model"] == "qwen2.5:3b"
 
 
-def test_images_are_rejected(client):
+def test_remote_image_urls_are_rejected(client):
     key = new_key(client)
     body = {"messages": [{"role": "user", "content": [
         {"type": "image_url", "image_url": {"url": "http://x/y.png"}}]}]}
     resp = client.post("/v1/chat/completions", json=body, headers=bearer(key))
-    assert resp.status_code == 400 and resp.json()["error"]["code"] == "unsupported_content"
+    assert resp.status_code == 400 and resp.json()["error"]["code"] == "unsupported_image"
 
 
 def test_text_parts_are_flattened(client, captured):

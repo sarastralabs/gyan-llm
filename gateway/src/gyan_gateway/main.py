@@ -28,6 +28,7 @@ from .research.fetch import USER_AGENT, PageFetcher
 from .research.pipeline import Researcher
 from .research.search import SearxClient
 from .store import Store
+from .vision import VisionService
 
 log = logging.getLogger("gyan.gateway")
 
@@ -66,14 +67,16 @@ def create_app(
             page_ttl_s=cfg.page_cache_ttl_s,
             fetch_concurrency=cfg.fetch_concurrency,
         )
+        ollama = OllamaClient(cfg.ollama_url, client, cfg.request_timeout_s)
         app.state.svc = Services(
             settings=cfg,
             store=store,
             limiter=Limiter(r, cfg.auth_failures_per_min),
             slots=slots,
-            ollama=OllamaClient(cfg.ollama_url, client, cfg.request_timeout_s),
+            ollama=ollama,
             redis=r,
             researcher=active_researcher,
+            vision=VisionService(ollama, r, slots, cfg),
             research_gate=asyncio.Semaphore(cfg.research_concurrency),
         )
         yield
@@ -104,7 +107,9 @@ def create_app(
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
         started = time.monotonic()
         declared = request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > cfg.max_body_bytes:
+        is_chat = request.url.path == "/v1/chat/completions"
+        limit = cfg.chat_body_limit if is_chat else cfg.max_body_bytes
+        if declared.isdigit() and int(declared) > limit:
             return JSONResponse(
                 error_body("Request body too large.", "invalid_request_error", "body_too_large"),
                 status_code=413,

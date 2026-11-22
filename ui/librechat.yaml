@@ -118,11 +118,20 @@ interface:
           roundControlRadius: "9999px"
           authControlRadius: "9999px"
 
-# Gyan's models are text-only; do not offer file uploads.
+# Pictures only (photos, scans, screenshots). The gateway reads them with an OCR model and gives
+# the text to the chat model; other file types are not supported.
 fileConfig:
+  serverFileSizeLimit: 8
   endpoints:
     Gyan:
-      disabled: true
+      fileLimit: 3
+      fileSizeLimit: 4
+      totalSizeLimit: 8
+      supportedMimeTypes:
+        - "image/png"
+        - "image/jpeg"
+        - "image/webp"
+        - "image/gif"
 
 endpoints:
   custom:

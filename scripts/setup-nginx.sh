@@ -19,7 +19,8 @@ fi
 
 # Do not overwrite a config certbot has already extended with HTTPS.
 if [ -f /etc/nginx/sites-available/gyan ] && grep -q "managed by Certbot" /etc/nginx/sites-available/gyan; then
-  echo "The site already has HTTPS from certbot; leaving /etc/nginx/sites-available/gyan as it is."
+  echo "The site already has HTTPS from certbot; keeping it and refreshing the upload limit only."
+  sed -i 's/client_max_body_size [^;]*;.*/client_max_body_size 12m;  # photos and scans/' /etc/nginx/sites-available/gyan
 else
   sed "s/__HOST__/$HOST/g" deploy/nginx/gyan.conf.template > /etc/nginx/sites-available/gyan
 fi

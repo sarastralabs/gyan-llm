@@ -18,6 +18,7 @@ from .models import public_models, visible_models
 from .routes_research import research_chat
 from .schemas import ChatRequest, build_upstream_body, parse_body
 from .store import ApiKey
+from .vision import count_images
 
 router = APIRouter()
 
@@ -40,12 +41,19 @@ async def chat_completions(request: Request, key: ApiKey = Depends(current_key))
     svc = services(request)
     started = time.monotonic()
 
-    req = parse_body(await request.body(), svc.settings.max_body_bytes, ChatRequest)
+    raw = await request.body()
+    req = parse_body(raw, svc.settings.chat_body_limit, ChatRequest)
+    images = count_images(req)
+    if not images and len(raw) > svc.settings.max_body_bytes:
+        raise ApiError(413, "Request body too large.", code="body_too_large")
     model = req.model or svc.settings.default_model
     is_research = model == svc.settings.research_model_name
     # Web research is much more expensive than a plain chat, so it uses more of the budget.
     cost = svc.settings.research_cost if is_research else 1
+    cost += images * svc.settings.image_cost
     rate_headers = await svc.limiter.check_key(key, cost=cost)
+    if images:
+        req = await svc.vision.resolve(req)  # images become text; see vision.py
 
     if is_research:
         return await research_chat(svc, key, req, rate_headers)

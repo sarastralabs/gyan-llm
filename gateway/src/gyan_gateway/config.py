@@ -62,11 +62,34 @@ class Settings(BaseSettings):
     # Stops reading the web when idle; keeps connections alive for proxies with timeouts.
     stream_keepalive_s: float = 10.0
 
+    # --- images (OCR and photo reading; the text model never sees pixels)
+    # Pictures are turned into text first: a small OCR model reads documents and screenshots,
+    # and a small vision model describes photos that contain little or no text.
+    ocr_model: str = "glm-ocr"
+    vision_model: str = "qwen2.5vl:3b"
+    max_images: int = Field(3, ge=1, le=10)
+    max_image_bytes: int = Field(4_000_000, ge=10_000)
+    # Text found in one image is cut to this many characters (the model window is small).
+    image_text_max_chars: int = Field(6000, ge=500)
+    # Fewer characters than this from OCR means "a photo": ask the vision model instead.
+    ocr_min_chars: int = Field(25, ge=1)
+    ocr_max_tokens: int = Field(1200, ge=100)
+    vision_max_tokens: int = Field(500, ge=100)
+    # Each image costs this many units of a key's per-minute and daily budget.
+    image_cost: int = Field(3, ge=1)
+    image_cache_ttl_s: int = 86_400
+
     # --- network
     # Only true behind a proxy you control (nginx), so the real client IP is used.
     trust_proxy: bool = False
     # Comma-separated origins allowed to call the API from a browser. Empty = none.
     cors_origins: str = ""
+
+    @property
+    def chat_body_limit(self) -> int:
+        """Largest chat request: the text limit plus room for the images allowed in it."""
+        per_image = self.max_image_bytes * 4 // 3 + 200  # base64 grows data by a third
+        return self.max_body_bytes + self.max_images * per_image
 
     @property
     def allowed_model_list(self) -> list[str]:

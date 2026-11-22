@@ -5,11 +5,19 @@ from .deps import Services
 from .errors import ApiError
 
 
+def _base(name: str) -> str:
+    return name.removesuffix(":latest")
+
+
 async def visible_models(svc: Services) -> list[str]:
-    """Installed Ollama models, limited by ALLOWED_MODELS when it is set."""
+    """Installed Ollama models, limited by ALLOWED_MODELS when it is set.
+
+    The image-reading models are internal helpers, not chat models, so they are hidden.
+    """
     installed = await svc.ollama.installed_models()
     allowed = svc.settings.allowed_model_list
-    return [m for m in installed if not allowed or m in allowed]
+    hidden = {_base(svc.settings.ocr_model), _base(svc.settings.vision_model)}
+    return [m for m in installed if _base(m) not in hidden and (not allowed or m in allowed)]
 
 
 async def public_models(svc: Services) -> list[str]:

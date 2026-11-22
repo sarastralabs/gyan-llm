@@ -88,3 +88,29 @@ class OllamaClient:
                 type_="server_error", code="upstream_error",
             )
         return resp
+
+    async def read_image(self, model: str, prompt: str, image_b64: str, max_tokens: int) -> str:
+        """Ask a vision model about one image (Ollama's native API) and return its text."""
+        body = {
+            "model": model,
+            "stream": False,
+            "keep_alive": "5m",
+            "options": {"num_predict": max_tokens, "temperature": 0},
+            "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
+        }
+        url = f"{self.base_url}/api/chat"
+        try:
+            resp = await self.client.post(url, json=body, timeout=self.timeout)
+        except httpx.HTTPError:
+            raise upstream_unavailable() from None
+        if resp.status_code != 200:
+            raise ApiError(
+                502, "The image could not be read.", type_="server_error", code="upstream_error"
+            )
+        try:
+            return str(resp.json()["message"]["content"])
+        except (ValueError, KeyError, TypeError):
+            raise ApiError(
+                502, "Invalid response from the model server.",
+                type_="server_error", code="upstream_error",
+            ) from None

@@ -13,6 +13,7 @@ from .limits import Limiter, SlotPool
 from .ollama import OllamaClient
 from .research.pipeline import Researcher
 from .store import ApiKey, Store
+from .vision import VisionService
 
 
 @dataclass
@@ -24,6 +25,7 @@ class Services:
     ollama: OllamaClient
     redis: object
     researcher: Researcher
+    vision: VisionService
     # Caps how many research pipelines (search + fetch) run at once.
     research_gate: asyncio.Semaphore
 
