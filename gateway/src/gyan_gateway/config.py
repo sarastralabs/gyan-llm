@@ -62,19 +62,20 @@ class Settings(BaseSettings):
     # Stops reading the web when idle; keeps connections alive for proxies with timeouts.
     stream_keepalive_s: float = 10.0
 
-    # --- images (OCR and photo reading; the text model never sees pixels)
-    # Pictures are turned into text first: a small OCR model reads documents and screenshots,
-    # and a small vision model describes photos that contain little or no text.
-    ocr_model: str = "glm-ocr"
+    # --- images (the text model never sees pixels)
+    # Pictures are turned into text first. Tesseract reads documents, receipts and screenshots in
+    # about a second. When it finds little text or is unsure (a photo, a blurry scan), a small
+    # vision model takes over: slower (minutes on 2 cores) but able to describe a scene.
+    tesseract_langs: str = "eng"  # e.g. "eng+hin+kan" (language data must be installed)
+    ocr_min_confidence: float = Field(60.0, ge=0, le=100)
+    ocr_min_words: int = Field(3, ge=1)
+    ocr_timeout_s: float = 30.0
     vision_model: str = "qwen2.5vl:3b"
+    vision_max_tokens: int = Field(500, ge=100)
     max_images: int = Field(3, ge=1, le=10)
     max_image_bytes: int = Field(4_000_000, ge=10_000)
     # Text found in one image is cut to this many characters (the model window is small).
     image_text_max_chars: int = Field(6000, ge=500)
-    # Fewer characters than this from OCR means "a photo": ask the vision model instead.
-    ocr_min_chars: int = Field(25, ge=1)
-    ocr_max_tokens: int = Field(1200, ge=100)
-    vision_max_tokens: int = Field(500, ge=100)
     # Each image costs this many units of a key's per-minute and daily budget.
     image_cost: int = Field(3, ge=1)
     image_cache_ttl_s: int = 86_400

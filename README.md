@@ -129,8 +129,10 @@ Good to know:
 Attach a picture in the chat site, or send an OpenAI-style `image_url` part to the API. The text
 model cannot see pixels, so the gateway first turns each image into text:
 
-1. **`glm-ocr`** (a small OCR model) reads documents, invoices, screenshots and forms.
-2. If it finds almost no text, the picture is treated as a photo and **`qwen2.5vl:3b`** describes it.
+1. **Tesseract** (a classic OCR program inside the gateway) reads documents, invoices, receipts and
+   screenshots in about a second, in English, Hindi or Kannada (`TESSERACT_LANGS`).
+2. If it finds almost no text or is unsure (a photo, a blurry scan), **`qwen2.5vl:3b`** describes
+   the picture instead.
 3. The text is handed to the chat model (or `gyan-research`), which answers your question.
 
 ```bash
@@ -140,11 +142,11 @@ curl https://HOST/v1/chat/completions -H "Authorization: Bearer $KEY" -H "Conten
 ```
 
 Things to know: images must be inline base64 `data:` URLs (PNG, JPEG, WebP or GIF, up to 4 MB, at most 3
-per request); remote image URLs are refused on purpose. Reading takes time on 2 CPU cores, about 15
-to 30 seconds for a typical page, and longer the first time after the models were idle. Each image
+per request); remote image URLs are refused on purpose. Documents are read in about a second. Photos and unclear scans go to the vision model, which takes
+3 to 6 minutes for a new picture on 2 CPU cores (the model server is busy meanwhile). Each image
 is read once and remembered for a day, so follow-up questions are fast. An image counts as 3
 requests against a key's limits (`IMAGE_COST`). The reading is only as good as the small OCR
-model: check numbers in the result before relying on them. The two helper models are hidden from `/v1/models`.
+model: check numbers in the result before relying on them. The vision model is hidden from `/v1/models`.
 
 ## How capacity is protected
 

@@ -9,6 +9,11 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     DATABASE_PATH=/data/gateway.db
 COPY --from=build /install /usr/local
+# Tesseract reads text in images (documents, receipts, screenshots). English, Hindi and Kannada.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+       tesseract-ocr-hin tesseract-ocr-kan \
+    && rm -rf /var/lib/apt/lists/*
 RUN useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin app \
     && mkdir /data && chown app /data
 USER app

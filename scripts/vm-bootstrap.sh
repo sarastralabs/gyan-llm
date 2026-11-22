@@ -36,14 +36,12 @@ case "$INSTALLED" in
   *"$MODEL"*) echo "$MODEL is already installed" ;;
   *) docker compose exec -T ollama ollama pull "$MODEL" ;;
 esac
-# Image readers: the OCR model for documents and the vision model for photos.
-OCR="$(grep -E '^OCR_MODEL=' .env | cut -d= -f2- || true)"; VISION="$(grep -E '^VISION_MODEL=' .env | cut -d= -f2- || true)"
-for helper in "${OCR:-glm-ocr}" "${VISION:-qwen2.5vl:3b}"; do
-  case "$INSTALLED" in
-    *"$helper"*) echo "$helper is already installed" ;;
-    *) docker compose exec -T ollama ollama pull "$helper" ;;
-  esac
-done
+# The vision model describes photos (documents are read by Tesseract inside the gateway image).
+VISION="$(grep -E '^VISION_MODEL=' .env | cut -d= -f2- || true)"; VISION="${VISION:-qwen2.5vl:3b}"
+case "$INSTALLED" in
+  *"$VISION"*) echo "$VISION is already installed" ;;
+  *) docker compose exec -T ollama ollama pull "$VISION" ;;
+esac
 
 echo "== 4/5 the chat UI's gateway key"
 if grep -qE '^GYAN_API_KEY=.+' .env; then

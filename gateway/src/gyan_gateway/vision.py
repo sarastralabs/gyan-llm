@@ -7,6 +7,7 @@ are refused: fetching arbitrary URLs for a caller would be a server-side request
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -22,7 +23,6 @@ from .ollama import OllamaClient
 from .schemas import ChatMessage, ChatRequest
 
 _DATA_URL = re.compile(r"^data:image/[a-z0-9.+-]+;base64,(.*)$", re.I | re.S)
-OCR_PROMPT = "Text Recognition:"
 VISION_PROMPT = (
     "Describe this image in detail. Then transcribe any text that is visible in it, exactly as "
     "written. Do not guess at things you cannot see."
@@ -126,11 +126,6 @@ class VisionService:
             if _is_image(part)
         ]
         installed = {_base(name) for name in await self.ollama.installed_models()}
-        if _base(self.settings.ocr_model) not in installed:
-            raise ApiError(
-                503, "Image reading is not set up on this server.",
-                type_="server_error", code="vision_unavailable",
-            )
 
         texts: dict[str, str] = {}
         messages: list[ChatMessage] = []
@@ -153,31 +148,69 @@ class VisionService:
             messages.append(message.model_copy(update={"content": parts}))
         return req.model_copy(update={"messages": messages})
 
+    async def _tesseract(self, data: bytes) -> tuple[str, float, int]:
+        """Text, average confidence (0-100) and word count from Tesseract; empty if unavailable."""
+        s = self.settings
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "tesseract", "stdin", "stdout", "-l", s.tesseract_langs, "--psm", "3", "tsv",
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        except OSError:
+            return "", 0.0, 0  # Tesseract is not installed
+        try:
+            out, _ = await asyncio.wait_for(proc.communicate(data), s.ocr_timeout_s)
+        except TimeoutError:
+            proc.kill()
+            return "", 0.0, 0
+        if proc.returncode != 0:
+            return "", 0.0, 0
+        return parse_tsv(out.decode("utf-8", errors="replace"))
+
     async def _read(self, image: _Image, installed: set[str]) -> str:
         key = f"vision:{image.sha}"
         cached = await self.redis.get(key)
         if cached:
             return str(cached)
         s = self.settings
-        b64 = base64.b64encode(image.data).decode()
-        lease = await self.slots.acquire()  # the model server handles one thing at a time
-        try:
-            text = (
-                await self.ollama.read_image(s.ocr_model, OCR_PROMPT, b64, s.ocr_max_tokens)
-            ).strip()
-            if len(text) >= s.ocr_min_chars:
-                result = f"(text read from the image)\n{text}"
-            elif _base(s.vision_model) in installed:
-                described = (
-                    await self.ollama.read_image(
-                        s.vision_model, VISION_PROMPT, b64, s.vision_max_tokens
-                    )
-                ).strip()
-                result = f"(description of the photo, which has little text)\n{described}"
-            else:
-                result = text or "(no readable text found in the image)"
-        finally:
-            await lease.release()
+        text, confidence, words = await self._tesseract(image.data)
+        if words >= s.ocr_min_words and confidence >= s.ocr_min_confidence:
+            result = f"(text read from the image)\n{text}"
+        elif _base(s.vision_model) in installed:
+            b64 = base64.b64encode(image.data).decode()
+            lease = await self.slots.acquire()  # the model server handles one thing at a time
+            try:
+                described = await self.ollama.read_image(
+                    s.vision_model, VISION_PROMPT, b64, s.vision_max_tokens
+                )
+            finally:
+                await lease.release()
+            label = "(description of the picture, which has little clear text)"
+            result = f"{label}\n{described.strip()}"
+        else:
+            result = text or "(no readable text found in the image)"
         result = result[: s.image_text_max_chars]
         await self.redis.set(key, result, ex=s.image_cache_ttl_s)
         return result
+
+
+def parse_tsv(tsv: str) -> tuple[str, float, int]:
+    """Rebuild lines of text from Tesseract's TSV output, with the average word confidence."""
+    lines: dict[tuple[str, str, str], list[str]] = {}
+    confidences: list[float] = []
+    for row in tsv.splitlines()[1:]:
+        cols = row.split("\t")
+        if len(cols) < 12 or not cols[11].strip():
+            continue
+        try:
+            conf = float(cols[10])
+        except ValueError:
+            continue
+        if conf < 0:
+            continue
+        confidences.append(conf)
+        lines.setdefault((cols[2], cols[3], cols[4]), []).append(cols[11].strip())
+    text = "\n".join(" ".join(words) for words in lines.values())
+    average = sum(confidences) / len(confidences) if confidences else 0.0
+    return text, average, len(confidences)

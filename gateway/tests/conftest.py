@@ -1,7 +1,6 @@
 """Test fixtures: fake Redis, a fake Ollama (httpx.MockTransport) and an app wired to both."""
 from __future__ import annotations
 
-import base64
 import json
 
 import fakeredis.aioredis
@@ -17,7 +16,7 @@ from gyan_gateway.research.search import ResearchError, SearchResult
 ADMIN_TOKEN = "a" * 32
 ADMIN = {"Authorization": f"Bearer {ADMIN_TOKEN}"}
 MODELS = ("qwen2.5:3b", "tiny:1b")
-HELPER_MODELS = ("glm-ocr:latest", "qwen2.5vl:3b")  # image readers: installed, but hidden
+HELPER_MODELS = ("qwen2.5vl:3b",)  # the image describer: installed, but hidden
 
 ARTICLE = """<html><head><title>Alpha Docs - Install</title></head><body>
 <nav><a href="/">Home</a><a href="/pricing">Pricing</a></nav>
@@ -75,11 +74,7 @@ def make_ollama(captured: list[dict], vision_calls: list[dict] | None = None):
         if request.url.path == "/api/chat":  # native API, used to read images
             body = json.loads(request.content)
             vision_calls.append(body)
-            pixels = base64.b64decode(body["messages"][0]["images"][0])
-            if body["model"].startswith("glm-ocr"):
-                text = "" if b"photo" in pixels else "INVOICE 4821 Total: Rs 6,050 (GST included)"
-            else:
-                text = "A brown dog running on a beach at sunset."
+            text = "A brown dog running on a beach at sunset."
             return httpx.Response(200, json={"message": {"role": "assistant", "content": text}})
         if request.url.path == "/v1/chat/completions":
             body = json.loads(request.content)

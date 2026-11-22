@@ -16,7 +16,7 @@ async def visible_models(svc: Services) -> list[str]:
     """
     installed = await svc.ollama.installed_models()
     allowed = svc.settings.allowed_model_list
-    hidden = {_base(svc.settings.ocr_model), _base(svc.settings.vision_model)}
+    hidden = {_base(svc.settings.vision_model)}
     return [m for m in installed if _base(m) not in hidden and (not allowed or m in allowed)]
 
 
