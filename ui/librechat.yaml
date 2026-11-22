@@ -142,8 +142,12 @@ endpoints:
       models:
         default: ["qwen2.5:3b", "gyan-research"]
         fetch: false
-      # Naming a chat costs an extra model call. On a 2-core server that delays real answers.
-      titleConvo: false
+      # Naming a chat costs one short extra model call after the answer. It always uses the small
+      # chat model (never web research), and the prompt is kept tiny so it takes a few seconds.
+      titleConvo: true
+      titleModel: "qwen2.5:3b"
+      titleMethod: "completion"
+      titlePrompt: "Give a title of at most 5 words for this conversation. Reply with the title only, no quotes.\n\n{convo}"
       modelDisplayLabel: "Gyan"
       iconURL: "/assets/gyan-icon.png"
       dropParams: ["user"]
